@@ -1,0 +1,136 @@
+<?php
+
+/**
+ * Resend email form builder.
+ */
+function webform_mod_resend_email_form($form, $form_state) {
+  $form['markup'] = array(
+    '#type' => 'fieldset',
+    '#title' => 'Resend all submission confirmation emails with the following email address.'
+  );
+  $form['markup']['email'] = array(
+    '#type' => 'textfield',
+    '#required' => TRUE,
+    '#title' => t('Email Address'),
+  );
+  $form['actions'] = array(
+    '#type' => 'actions',
+    'submit' => array(
+      '#type' => 'submit',
+      '#value' => 'Resend Emails',
+    ),
+  );
+  return $form;
+}
+
+/**
+ * Resend email form validation.
+ */
+function webform_mod_resend_email_form_validate($form, $form_state) {
+  $em = $form_state['values']['email'];
+  if (!valid_email_address($em)) {
+    form_set_error('email', 'The email you entered is invalid.');
+    return FALSE;
+  }
+  return TRUE;
+}
+
+/**
+ * Resend email form submission.
+ */
+function webform_mod_resend_email_form_submit($form, $form_state) {
+  $em = $form_state['values']['email'];
+  webform_mod_resend_emails($em);
+  drupal_set_message(t('Submission emails have been resent to your email address @email',array('@email' => $em)));
+}
+
+/**
+ * Implements hook_node_view_alter().
+ */
+function webform_mod_node_view_alter(&$build) {
+  if (isset($_GET['resend'])) {
+    // We want to resend emails. So disable webform and show email form.
+    $build['webform']['#enabled'] = FALSE;
+    $build['resend_form'] = drupal_get_form('webform_mod_resend_email_form');
+  }
+  if (!isset($_GET['email'])) {
+    // Email is not set, so we check to see if a message is set for previous
+    // submissions.
+    $email = $build['webform']['#form']['submitted']['email_address']['#value'];
+    $messages = drupal_get_messages('notice');
+    $messages = drupal_get_messages('error');
+    foreach ($messages as $message) {
+      if (substr($message[0], 0, 34) == 'The value <em class="placeholder">') {
+        // Previous submission, so we change the message to show our links to
+        // submit another with same email, or resend submission emails.
+        $msg = '';
+        $link = l(
+          'Click here to submit another registration with this email address.',
+          'content/test-webform',
+          array('query' => array(
+            'email' => $email,
+          ))
+        );
+        $view = l(
+          'Click here to have all registrations resent to your email.',
+          'content/test-webform',
+          array('query' => array(
+            'resend' => NULL,
+          ))
+        );
+        $msg = t('You have already submitted this form.') . '<br />' . $link . '<br />' . $view;
+        drupal_set_message($msg, 'warning');
+        unset($build['webform']);
+      }
+      else {
+        // No previous submission, so just show the error message that would
+        // otherwise be displayed.
+        drupal_set_message($message[0], 'error');
+      }
+    }
+  }
+  else {
+    // Email is passed in querystring, so we are wanting to submit another for
+    // this email address.
+    $email = urldecode($_GET['email']);
+    if ($email != '') {
+      $msg = t("Submitting another registration for the email @email.", array('@email' => $email));
+    }
+    else {
+      $msg = t("Submitting another registration for existing email.");
+    }
+    // Prefill the email address form field if email was passed in querystring.
+    $build['webform']['#form']['submitted']['email_address']['#value'] = $email;
+    $messages = drupal_get_messages('notice');
+    drupal_set_message($msg);
+  }
+}
+
+/**
+ * Implements hook_form_alter().
+ */
+function webform_mod_form_alter(&$form, &$form_state, $form_id) {
+  if (substr($form_id, 0, 20) == 'webform_client_form_') {
+    if (isset($_GET['email'])) {
+      // Email was passed in querystring, so we disable the unique validation
+      // function on the email field and only tell it to validate for a proper
+      // email address.
+      $form['submitted']['email_address']['#element_validate'] = array('_webform_validate_email');
+    }
+  }
+}
+
+/**
+ * Resends submission email message for given email.
+ */
+function webform_mod_resend_emails($email) {
+  $q = db_select('webform_submitted_data', 'wsd')
+    ->fields('wsd')
+    ->condition('data', $email)
+    ->execute();
+  foreach ($q as $row) {
+    $node = node_load($row->nid);
+    $submission = webform_get_submission($row->nid, $row->sid);
+    webform_submission_send_mail($node, $submission);
+  }
+}
