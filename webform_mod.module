@@ -48,6 +48,9 @@ function webform_mod_resend_email_form_submit($form, $form_state) {
  * Implements hook_node_view_alter().
  */
 function webform_mod_node_view_alter(&$build) {
+  if (!isset($build['webform'])) {
+    return;
+  }
   if (isset($_GET['resend'])) {
     // We want to resend emails. So disable webform and show email form.
     $build['webform']['#enabled'] = FALSE;
@@ -134,3 +137,22 @@ function webform_mod_resend_emails($email) {
     webform_submission_send_mail($node, $submission);
   }
 }
+
+/**
+ * Implements hook_webform_submission_presave().
+ */
+function webform_mod_webform_submission_presave($node, &$submission) {
+  // generate barcode
+  $barcode = 'http://www.barcodesinc.com/generator/image.php?code=904991112&style=198&type=C128B&width=300&height=100&xres=2&font=5';
+  $tempname = drupal_tempnam('temporary://', 'barcode_');
+  $ch = curl_init ($img);
+  curl_setopt($ch, CURLOPT_HEADER, 0);
+  curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+  curl_setopt($ch, CURLOPT_BINARYTRANSFER,1);
+  $rawdata = curl_exec($ch);
+  curl_close($ch);
+  $path = file_unmanaged_save_data($rawdata);
+  $submission->data[6]['value'][0] = $path;
+}
+
+// webform barcode url: http://www.barcodesinc.com/generator/image.php?code=904991112&style=198&type=C128B&width=300&height=100&xres=2&font=5
