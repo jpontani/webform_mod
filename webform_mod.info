@@ -1,5 +1,6 @@
 name = Webform Modifications
 description = "Give user option to submit another webform with same email address."
 core = 7.x
+package = VT Rec Sports
 
 dependencies[] = webform
