@@ -1,0 +1,22 @@
+#header, #sub-header, #main-left, #main-right, #main-content-footer, #footer, #block-addtoany-addtoany-button, #block-fblikebutton-fblikebutton-block, #___plusone_0 {
+	display: none! important;
+}
+div.registration-submission {
+	display: block !important;
+}
+#container {
+	min-width: 0px !important;
+}
+#main-container {
+	border: 0px !important;
+	margin: 0px !important;
+	min-width: 0px !important;
+	background: transparent !important;
+	width: 100% !important;
+}
+#main-content {
+	padding: 0px !important;
+	border: 0px !important;
+	margin: 0px !important;
+	width: 100% !important;
+}
