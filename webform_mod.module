@@ -8,10 +8,10 @@
  * Implements hook_menu().
  */
 function webform_mod_menu() {
-  $items['runinremembrance/register/confirm/%'] = array(
+  $items['fitness/events/32-run/register/confirm/%'] = array(
     'title' => t('3.2 Run in Remembrance Registration Confirmation'),
     'page callback' => 'webform_mod_confirm_page',
-    'page arguments' => array(3),
+    'page arguments' => array(5),
     'access arguments' => array('access content'),
   );
 
@@ -84,7 +84,7 @@ function webform_mod_node_view_alter(&$build) {
   if (!isset($_GET['email'])) {
     // Email is not set, so we check to see if a message is set for previous
     // submissions.
-    $email = $build['webform']['#form']['submitted']['email']['#value'];
+    $email = $build['webform']['#form']['submitted']['personal_information']['email']['#value'];
     $notices = drupal_get_messages('notice');
     $messages = drupal_get_messages('error');
     foreach ($messages as $message) {
@@ -133,7 +133,7 @@ function webform_mod_node_view_alter(&$build) {
       $msg = t("Submitting another registration for existing email.");
     }
     // Prefill the email address form field if email was passed in querystring.
-    $build['webform']['#form']['submitted']['email']['#value'] = $email;
+    $build['webform']['#form']['submitted']['personal_information']['email']['#value'] = $email;
     $messages = drupal_get_messages('notice');
     drupal_set_message($msg);
   }
@@ -148,7 +148,7 @@ function webform_mod_form_alter(&$form, &$form_state, $form_id) {
       // Email was passed in querystring, so we disable the unique validation
       // function on the email field and only tell it to validate for a proper
       // email address.
-      $form['submitted']['email']['#element_validate'] = array('_webform_validate_email');
+      $form['submitted']['personal_information']['email']['#element_validate'] = array('_webform_validate_email');
     }
   }
 }
@@ -169,15 +169,25 @@ function webform_mod_resend_emails($email) {
 }
 
 /**
- * Implements hook_webform_submission_insert().
+ * Implements hook_webform_submission_presave().
  */
-function webform_mod_webform_submission_insert($node, $submission) {
-  global $user;
+function webform_mod_webform_submission_presave($node, &$submission) {
   // generate barcode
   if ($node->nid != 6940) {
     return;
   }
-  $barcode = 'http://www.barcodesinc.com/generator/image.php?code=' . webform_mod_create_barcode($submission) . '&style=198&type=C128B&width=300&height=100&xres=2&font=5';
+  
+}
+
+/**
+ * Implements hook_webform_submission_insert().
+ */
+function webform_mod_webform_submission_insert($node, $submission) {
+  if ($node->nid != 6940) {
+    return;
+  }
+  $number = webform_mod_create_barcode($submission);
+  $barcode = 'http://www.barcodesinc.com/generator/image.php?code=' . $number . '&style=198&type=C128B&width=300&height=100&xres=2&font=5';
   $name = "barcode_" . substr(md5($submission->submitted), 2, 8) . ".png";
   $image = imagecreatefrompng($barcode);
   $imagepath = DRUPAL_ROOT . "/sites/drupal.recsports.vt.edu/files/webform/barcode/" . $name;
@@ -187,9 +197,10 @@ function webform_mod_webform_submission_insert($node, $submission) {
   $file->uri = "public://webform/barcode/" . $name;
   $file->filename = $name;
   $file->filemime = "image/png";
-  $file->uid = $user->uid;
+  $file->uid = 1;
   $file->status = FILE_STATUS_PERMANENT;
   $file = file_save($file);
+  $submission->data[25]['value'][0] = $number;
   $submission->data[7]['value'][0] = $file->fid;
   $submission->data[8]['value'][0] = file_create_url($file->uri);
   webform_submission_update($node, $submission);
@@ -200,21 +211,24 @@ function webform_mod_webform_submission_insert($node, $submission) {
  * Returns the submission number for the node (starts at 1).
  */
 function webform_mod_get_submission_number($submission) {
-  return db_select('webform_submissions', 'ws')
+  $count = db_select('webform_submissions', 'ws')
     ->fields('ws')
     ->condition('nid', $submission->nid)
     ->condition('sid', $submission->sid, "<=")
     ->execute()
     ->rowCount();
+  watchdog('webform mod', $count);
+  return intval($count);
 }
 
 /**
  * Generate the barcode number to be used base on submission number and date.
  */
 function webform_mod_create_barcode($submission) {
-  $num = (int) webform_mod_get_submission_number($submission);
-  $datestr = (int) date("mdy", $submission->submitted);
+  $num = intval(webform_mod_get_submission_number($submission));
+  $datestr = intval(date("mdy", $submission->submitted));
   $num += $datestr;
+  watchdog('webform mod', "submission #" . $submission->sid . ": " . $num);
   $num = $num . "";
   while (strlen($num) < 5) {
    $num = "0" . $num; 
@@ -230,7 +244,7 @@ function webform_mod_create_barcode($submission) {
  * Confirmation page to show submission info with barcode.
  */
 function webform_mod_confirm_page($sid) {
-  if ($sid != $_SESSION['run_in_remembrance_sid']) {
+  if ((int) $sid != (int) $_SESSION['run_in_remembrance_sid']) {
     return t("You are not allowed to view this submission.") . "<br />"
       . t("Please check your email to print out your registration confirmation.")
       . "<br /><br />" . t("If you cannot find your confirmation, please check")
@@ -243,15 +257,18 @@ function webform_mod_confirm_page($sid) {
   $submission = $submission[$sid];
   drupal_add_css(drupal_get_path("module", "webform_mod") . "/css/print.css", array('media' => 'print'));
   $nid = $submission->nid;
-  $page = "<div class='registration-submission'>";
-  $page .= t("<br /><p align='center'><em>Please print this page for your convenience while checking in.<br />");
+  $page = "<div class='registration-submission'><br />";
+  $page .= t("<p align='center'><em>Please print this page immediately.<br />");
+  $page .= t("You must have this printout in order to check in on the day of the event.<br />");
   $page .= t("A copy has been sent to the email address you submitted.</em></p><br />");
-  $page .= "<p><span class='label'>Submission ID:</span> " . $submission->sid . "</p>";
-  $page .= "<p><span class='label'>First Name:</span> " . $submission->data[1]['value'][0] . "</p>";
-  $page .= "<p><span class='label'>Last Name:</span> " . $submission->data[2]['value'][0] . "</p>";
-  $page .= "<p><span class='label'>Email Address:</span> " . $submission->data[3]['value'][0] . "</p>";
-  $page .= "<p><span class='label'>T-Shirt Size:</span> " . webform_mod_get_option_value($nid, 5, $submission->data[5]['value'][0]) . "</p>";
+  $page .= t("<p><span class='label'>First Name:</span> @fname</p>", array('@fname' => $submission->data[1]['value'][0]));
+  $page .= t("<p><span class='label'>Last Name:</span> @lname</p>", array('@lname' => $submission->data[2]['value'][0]));
+  $page .= t("<p><span class='label'>Email Address:</span> !email</p>", array('!email' => $submission->data[3]['value'][0]));
+  $page .= t("<p><span class='label'>Running Group:</span> @group</p>", array('@group' => webform_mod_get_option_value(6940, 13, $submission->data[13]['value'][0])));
   $page .= "<p><span class='label'>Registration Date:</span> " . date("F j, Y -- h:i:s A", $submission->submitted) . "</p>";
+  $page .= t("<hr><p><em>If you would like to change your running group on the day of the event, you are free to do so.");
+  $page .= " " . t("Simply line up with the group you wish to run with. You do not need to notify any event staff of the change.</em></p>");
+  $page .= t("<p>Please see the !link for more information regarding the event.</p>", array('!link' => l("3.2 Run in Remembrance page", 'fitness/events/32-run') ));
   $page .= "<div align='center'><img class='border' src='" . $submission->data[8]['value'][0] . "'></div>";
   $page .= "</div>";
   unset($_SESSION['run_in_remembrance_sid']);
@@ -279,4 +296,8 @@ function webform_mod_get_option_value($nid, $cid, $valkey) {
       return $value;
     }
   }
+}
+
+function webform_mod_block_view_alter(&$data, $block) {
+  
 }
